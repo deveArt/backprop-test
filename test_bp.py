@@ -1,5 +1,4 @@
 import numpy as np
-import sys
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.metrics import accuracy_score
@@ -7,24 +6,20 @@ from sklearn.utils import shuffle
 
 np.random.seed(555)
 
-def d(*args):
-    print(*args)
-    sys.exit()
-
-# Load data and some preprocessing
+# Load data and do some preprocessing
 # https://archive.ics.uci.edu/ml/machine-learning-databases/tic-tac-toe/tic-tac-toe.data
 
 df = shuffle(pd.read_csv('tic_tac.csv'))
-df.columns = [1, 2, 3, 4 ,5 ,6 ,7 ,8, 9, 'target']
+df.columns = [1, 2, 3, 4, 5, 6, 7, 8, 9, 'target']
 
-X = pd.get_dummies(df[[1, 2, 3, 4 ,5 ,6 ,7 ,8, 9]])
+X = pd.get_dummies(df[[1, 2, 3, 4, 5, 6, 7, 8, 9]])
 
 Y = df[['target']].copy()
 Y.values[Y == 'positive'] = 1
 Y.values[Y == 'negative'] = 0
 Y = Y.astype(np.int8)
 
-train_size = 750
+train_size = 735
 X_train = X[:train_size].values
 X_test = X[train_size:].values
 Y_train = Y[:train_size].values
@@ -33,9 +28,9 @@ Y_test = Y[train_size:].values
 # Hyper params/optimisation opts
 
 input_dim = 27
-hidden_layers = [80, 50, 30]
-epochs = 350
-lr = 0.18
+hidden_layers = [55, 25]
+epochs = 800
+lr = 0.2
 hl_count = len(hidden_layers)
 ll_act_fn = 'sigmoid'
 hl_act_fn = 'tanh'
@@ -51,7 +46,6 @@ for i, layer_units in enumerate(hidden_layers):
     else:
         prev_dim = hidden_layers[i - 1]
         model.append(np.random.randn(layer_units, prev_dim) / np.sqrt(prev_dim))
-
 model.append(np.random.randn(1, hidden_layers[-1]) / np.sqrt(hidden_layers[-1]))
 
 def forward(X):
@@ -119,9 +113,10 @@ def a_deriv(V, last=False):
     if act_fn == 'linear':
         return 1
 
+# Model training
+
 C = []
 eps = []
-# Training
 
 for i in range(epochs):
     eps.append(i)
@@ -132,11 +127,13 @@ for i in range(epochs):
 
     backward(H, err, V)
 
+# Show results
+
 pdata = pd.DataFrame({'epochs': eps, 'cost': C})
 pdata.plot(x='epochs', y='cost')
 
 Y_pred, _, _ = forward(X_test)
 acc = accuracy_score(Y_test, Y_pred.round())
 
-print('accuracy:', acc)
+print('Test accuracy score:', acc)
 plt.show()
