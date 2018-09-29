@@ -30,7 +30,7 @@ Y_test = Y[train_size:].values
 
 input_dim = 27 #27
 hidden_layers = [30, 20]
-epochs = 5
+epochs = 500
 lr = 0.2
 hl_count = len(hidden_layers)
 ll_act_fn = 'sigmoid'
@@ -67,7 +67,7 @@ def forward(X, model_w):
     return Y, H, V
 
 
-def backward(H, err, V, model_w):
+def backward(H, err, V, model_w, update=True):
     grads = []
     r_model = list(enumerate(model_w))
     r_model.reverse()
@@ -80,10 +80,13 @@ def backward(H, err, V, model_w):
             grad = a_deriv(V[i]) * np.dot(grad, model_w[i+1])
             dd = np.mean(np.einsum('ij,ik->ikj', H[i], grad), axis=0)
 
-        grads.append(dd)
+        grads.append(-dd)
         D = lr * dd
-        model_w[i] = wl + D
 
+        if update:
+            model_w[i] = wl + D
+
+    grads.reverse()
     return grads
 
 def cost_fn(err):
@@ -136,7 +139,7 @@ def revert_unroll(param_vec, shapes):
 
     return recovered
 
-def gradient_check(grads, X_set, Y_set, model_w, epsilon=1e-2):
+def gradient_check(grads, X_set, Y_set, model_w, epsilon=1e-7):
 
     param_vec, layer_shapes = unroll_params(model_w)
     grad_vec, _ = unroll_params(grads)
@@ -157,7 +160,6 @@ def gradient_check(grads, X_set, Y_set, model_w, epsilon=1e-2):
 
         grads_approx[i] = (j_plus - j_minus) / (2 * epsilon)
 
-    print(grad_vec, grads_approx)
     # Compute the difference of numerical and analytical gradients
     numerator = norm(grad_vec - grads_approx)
     denominator = norm(grads_approx) + norm(grad_vec)
@@ -177,15 +179,15 @@ def gradient_check(grads, X_set, Y_set, model_w, epsilon=1e-2):
 C = []
 eps = []
 
-for i in range(1):
+for i in range(epochs):
     eps.append(i)
     Y, H, V = forward(X_train, model)
 
     err = Y_train - Y
     C.append(cost_fn(err))
 
-    grads = backward(H, err, V, model)
-    gradient_check(grads, X_train, Y_train, model)
+    grads = backward(H, err, V, model) # pass update = False to make gradient checking
+    #gradient_check(grads, X_train, Y_train, model)
 
 # Show results
 
