@@ -1,45 +1,52 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn.metrics import accuracy_score
-from sklearn.utils import shuffle
+from sklearn.metrics import mean_absolute_error
+from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
 from numpy.linalg import norm
+import sys
 
 np.random.seed(555)
 
 # Load data and do some preprocessing
-# https://archive.ics.uci.edu/ml/machine-learning-databases/tic-tac-toe/tic-tac-toe.data
+#
 
-df = shuffle(pd.read_csv('tic_tac.csv'))
-df.columns = [1, 2, 3, 4, 5, 6, 7, 8, 9, 'target']
+features = pd.read_csv('kc_house_data.csv').drop(columns=['id', 'date', 'price', 'yr_built', 'yr_renovated', 'sqft_living15',
+                                                          'sqft_lot15', 'sqft_basement']).values
+target = pd.read_csv('kc_house_data.csv')[['price']].values
 
-X = pd.get_dummies(df[[1, 2, 3, 4, 5, 6, 7, 8, 9]])
+x_train, x_test, y_train, y_test = train_test_split(features, target, test_size=0.3, shuffle=True)
+y_test_orig = np.copy(y_test)
 
-Y = df[['target']].copy()
-Y.values[Y == 'positive'] = 1
-Y.values[Y == 'negative'] = 0
-Y = Y.astype(np.int8)
+x_scaler = MinMaxScaler((-1,1))
+x_scaler.fit(x_train)
+x_train = x_scaler.transform(x_train)
+x_test = x_scaler.transform(x_test)
 
-train_size = 735
-X_train = X[:train_size].values
-X_test = X[train_size:].values
-Y_train = Y[:train_size].values
-Y_test = Y[train_size:].values
+y_scaler = MinMaxScaler()
+y_scaler.fit(y_train)
+y_train = y_scaler.transform(y_train)
+y_test = y_scaler.transform(y_test)
 
+#print( x_test)
+#sys.exit()
 # Hyper params/optimisation opts
 
-input_dim = 27 #27
-hidden_layers = [30, 20]
-epochs = 500
-lr = 0.2
+input_dim = 13
+hidden_layers = [20, 50, 10]
+epochs = 85
+batch_size = 512
+lr = 0.011
 hl_count = len(hidden_layers)
-ll_act_fn = 'sigmoid'
+ll_act_fn = 'relu'
 hl_act_fn = 'tanh'
 
 # Init weights
 
 model = []
-B = np.zeros([hl_count+1, 1])
+B = []
 
 for i, layer_units in enumerate(hidden_layers):
     if i == 0:
@@ -47,27 +54,30 @@ for i, layer_units in enumerate(hidden_layers):
     else:
         prev_dim = hidden_layers[i - 1]
         model.append(np.random.randn(layer_units, prev_dim) / np.sqrt(prev_dim))
+    B.append(np.zeros([layer_units, 1]))
+
+B.append(np.zeros([1, 1]))
 model.append(np.random.randn(1, hidden_layers[-1]) / np.sqrt(hidden_layers[-1]))
 
-def forward(X, model_w):
+def forward(X, model_w, B):
     H = []
     V = []
 
     H.append(X)
-    V.append(np.dot(X, model_w[0].T) + B[0])
+    V.append(np.dot(X, model_w[0].T) + B[0].T)
     H.append(activate(V[0]))
     hl_cnt = len(model_w) - 1
 
     for i in range(1, hl_cnt):
-        V.append(np.dot(H[i], model_w[i].T) + B[i])
+        V.append(np.dot(H[i], model_w[i].T) + B[i].T)
         H.append(activate(V[i]))
 
-    V.append(np.dot(H[-1], model_w[hl_cnt].T) + B[hl_cnt])
+    V.append(np.dot(H[-1], model_w[hl_cnt].T) + B[hl_cnt].T)
     Y = activate(V[-1], last=True)
     return Y, H, V
 
 
-def backward(H, err, V, model_w, update=True):
+def backward(H, err, V, model_w, B, update=True):
     grads = []
     r_model = list(enumerate(model_w))
     r_model.reverse()
@@ -84,6 +94,7 @@ def backward(H, err, V, model_w, update=True):
         D = lr * dd
 
         if update:
+            B[i] = B[i] + lr * np.mean(grad, axis=0).reshape((grad.shape[1], 1))
             model_w[i] = wl + D
 
     grads.reverse()
@@ -109,9 +120,9 @@ def a_deriv(V, last=False):
         return 1 - np.tanh(V)**2
     if act_fn == 'relu':
         V_ = np.array(V, copy=True)
-        V_[V > 1] = 1
-        V_[V < 0] = 0
-        V_[V == 0] = 0.5
+        V_[V_ > 1] = 1
+        V_[V_ < 0] = 0
+        V_[V_ == 0] = 0.5
         return V_
     if act_fn == 'sigmoid':
         return 1 / (1 + np.exp(-V)) * (1 - 1 / (1 + np.exp(-V)))
@@ -174,28 +185,49 @@ def gradient_check(grads, X_set, Y_set, model_w, epsilon=1e-7):
 
     return difference
 
+def get_batches_iter(f_set, target, batch_size):
+    c = 0
+
+    while c * batch_size < f_set.shape[0]:
+        f_batch = f_set[batch_size*c: batch_size*(c+1)]
+        target_batch = target[batch_size*c: batch_size*(c+1)]
+
+        yield f_batch, target_batch
+        c += 1
+
 # Model training
 
 C = []
-eps = []
+t_C = []
 
 for i in range(epochs):
-    eps.append(i)
-    Y, H, V = forward(X_train, model)
+    batch_cost = []
 
-    err = Y_train - Y
-    C.append(cost_fn(err))
+    for train_batch_features, train_batch_target in get_batches_iter(x_train, y_train, batch_size):
+        Y, H, V = forward(train_batch_features, model, B)
 
-    grads = backward(H, err, V, model) # pass update = False to make gradient checking
-    #gradient_check(grads, X_train, Y_train, model)
+        err = train_batch_target - Y
+        batch_cost.append(cost_fn(err))
+
+        grads = backward(H, err, V, model, B) # pass update = False to make gradient checking
+
+        #gradient_check(grads, X_train, Y_train, model)
+
+    Y_val, _, _ = forward(x_test, model, B) # validate on each epoch
+    t_C.append(cost_fn(y_test - Y_val))
+    cost = np.mean(batch_cost)
+    C.append(cost)
+    print('epoch %s - train mse %s' % (i, cost))
+
 
 # Show results
 
-pdata = pd.DataFrame({'epochs': eps, 'cost': C})
-pdata.plot(x='epochs', y='cost')
+pdata = pd.DataFrame({'epochs': list(range(epochs)), 'train_loss': C, 'test_loss': t_C})
+pdata.plot(x='epochs', y=['train_loss', 'test_loss'])
 
-Y_pred, _, _ = forward(X_test, model)
-acc = accuracy_score(Y_test, Y_pred.round())
-
-print('Test accuracy score:', acc)
+Y_pred, _, _ = forward(x_test, model, B)
+Y_pred = y_scaler.inverse_transform(Y_pred)
+rmse = np.sqrt(mean_squared_error(y_test_orig, Y_pred))
+print(y_test_orig[:5], Y_pred[:5])
+print('Root mean squared error:', rmse)
 plt.show()
