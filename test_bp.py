@@ -63,7 +63,7 @@ model = {
 C = []
 t_C = []
 
-for i in range(1):
+for i in range(epochs):
     batch_cost = []
 
     for train_batch_features, train_batch_target in get_batches_iter(x_train, y_train, batch_size):
@@ -72,9 +72,8 @@ for i in range(1):
         err = train_batch_target - Y
         batch_cost.append(cost_fn(err))
 
-        grads = backward(H, err, V, model, lr, update=False) # pass update = False to make gradient checking
-
-        gradient_check(grads, train_batch_features, train_batch_target, model)
+        grads = backward(H, err, V, model, lr) # pass update = False to make gradient checking
+        #gradient_check(grads, train_batch_features, train_batch_target, model)
 
     Y_val, _, _ = forward(x_test, model) # validate on each epoch
     t_C.append(cost_fn(y_test - Y_val))
@@ -91,6 +90,5 @@ pdata.plot(x='epochs', y=['train_loss', 'test_loss'])
 Y_pred, _, _ = forward(x_test, model)
 Y_pred = y_scaler.inverse_transform(Y_pred)
 rmse = np.sqrt(mean_squared_error(y_test_orig, Y_pred))
-print(y_test_orig[:5], Y_pred[:5])
 print('Root mean squared error:', rmse)
 plt.show()
